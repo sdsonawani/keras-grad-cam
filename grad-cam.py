@@ -1,5 +1,8 @@
 from keras.applications.vgg16 import (
     VGG16, preprocess_input, decode_predictions)
+from keras.applications.vgg19 import (
+    VGG19, preprocess_input, decode_predictions)
+
 from keras.preprocessing import image
 from keras.layers.core import Lambda
 from keras.models import Sequential
@@ -62,6 +65,10 @@ def modify_backprop(model, name):
         new_model = VGG16(weights='imagenet')
     return new_model
 
+def _compute_gradients(tensor, var_list):
+    grads = tf.gradients(tensor, var_list)
+    return [grad if grad is not None else tf.zeros_like(var) for var, grad in zip(var_list, grads)]
+
 def deprocess_image(x):
     '''
     Same normalization as in:
@@ -80,7 +87,7 @@ def deprocess_image(x):
 
     # convert to RGB array
     x *= 255
-    if K.image_dim_ordering() == 'th':
+    if K.common.image_dim_ordering() == 'th':
         x = x.transpose((1, 2, 0))
     x = np.clip(x, 0, 255).astype('uint8')
     return x
@@ -96,8 +103,10 @@ def grad_cam(input_model, image, category_index, layer_name):
 
     loss = K.sum(model.layers[-1].output)
     conv_output =  [l for l in model.layers[0].layers if l.name is layer_name][0].output
-    grads = normalize(K.gradients(loss, conv_output)[0])
-    gradient_function = K.function([model.layers[0].input], [conv_output, grads])
+    # grads = normalize(K.gradients(loss, conv_output)[0])
+    grads = normalize(_compute_gradients(loss, [conv_output])[0])
+    # gradient_function = K.function([model.layers[0].input], [conv_output, grads])
+    gradient_function = K.function([model.layers[0].get_input_at(0)], [conv_output, grads])
 
     output, grads_val = gradient_function([image])
     output, grads_val = output[0, :], grads_val[0, :, :, :]
